@@ -102,6 +102,36 @@ final class JSONSafeEncoderTests: XCTestCase {
         XCTAssertEqual(newTest.myDouble, nil)
     }
     
+    func testLocalizedStandardCompare() throws {
+        struct TestStruct: Codable {
+            var ab: String = ""
+            var Ab: String = ""
+            var áb: String = ""
+            var äb: String = ""
+            var ac: String = ""
+        }
+        
+        let test = TestStruct()
+        
+        let encoder = JSONSafeEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.keySortingStrategy = .localizedStandardCompare
+        
+        let json = try encoder.encode(test)
+        XCTAssertNotNil(json)
+        
+        let prettyString = String(data: json, encoding: .utf8)!
+        XCTAssertEqual(prettyString, """
+        {
+          "ab" : "",
+          "Ab" : "",
+          "áb" : "",
+          "äb" : "",
+          "ac" : ""
+        }
+        """)
+    }
+    
     func testRegularEncodingStrings() throws {
         struct TestStruct: Codable {
             let myString: String
@@ -113,7 +143,8 @@ final class JSONSafeEncoderTests: XCTestCase {
         var prettyString: String
         let encoder = JSONSafeEncoder()
         encoder.nonConformingFloatEncodingStrategy = .convertToString(positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
-        encoder.outputFormatting = .prettyPrinted
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.keySortingStrategy = .localizedStandardCompare
 
         test = TestStruct(myString: "this is a test", myDouble: Double.nan)
         json = try encoder.encode(test)

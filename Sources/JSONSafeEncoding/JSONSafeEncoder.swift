@@ -195,6 +195,26 @@ open class JSONSafeEncoder {
             return result
         }
     }
+    
+    /// The strategy to use for sorting keys in the encoded JSON.
+    public enum KeySortingStrategy {
+        /// Use lexicographic ordering for sorting keys. This is the default strategy.
+        case lexicographically
+        
+        /// Use localized standard comparison for sorting keys. This is useful for sorting strings in a way that is more natural to users.
+        case localizedStandardCompare
+        
+        /// Provide a custom sorting closure to sort keys.
+        case custom((String, String) -> Bool)
+        
+        fileprivate var sortFunction: ((key: String, value: JSONValue), (key: String, value: JSONValue)) -> Bool {
+            switch self {
+            case .lexicographically: return { $0.key < $1.key }
+            case .localizedStandardCompare: return { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+            case .custom(let closure): return { closure($0.key, $1.key) }
+            }
+        }
+    }
 
     /// The output format to produce. Defaults to `[]`.
     open var outputFormatting: OutputFormatting = []
@@ -210,6 +230,9 @@ open class JSONSafeEncoder {
 
     /// The strategy to use for encoding keys. Defaults to `.useDefaultKeys`.
     open var keyEncodingStrategy: KeyEncodingStrategy = .useDefaultKeys
+    
+    /// The strategy to sort the keys. Defaults to `.lexicographically`.
+    open var keySortingStrategy: KeySortingStrategy = .lexicographically
 
     /// Contextual user-provided information for use during encoding.
     open var userInfo: [CodingUserInfoKey: Any] = [:]
@@ -220,6 +243,7 @@ open class JSONSafeEncoder {
         let dataEncodingStrategy: DataEncodingStrategy
         let nonConformingFloatEncodingStrategy: NonConformingFloatEncodingStrategy
         let keyEncodingStrategy: KeyEncodingStrategy
+        let keySortingStrategy: KeySortingStrategy
         let userInfo: [CodingUserInfoKey: Any]
     }
 
@@ -229,6 +253,7 @@ open class JSONSafeEncoder {
                         dataEncodingStrategy: dataEncodingStrategy,
                         nonConformingFloatEncodingStrategy: nonConformingFloatEncodingStrategy,
                         keyEncodingStrategy: keyEncodingStrategy,
+                        keySortingStrategy: keySortingStrategy,
                         userInfo: userInfo)
     }
 
@@ -247,7 +272,7 @@ open class JSONSafeEncoder {
     /// - throws: An error if any value throws an error during encoding.
     open func encode<T: Encodable>(_ value: T) throws -> Data {
         let value: JSONValue = try encodeAsJSONValue(value)
-        let writer = JSONValue.Writer(options: self.outputFormatting)
+        let writer = JSONValue.Writer(options: self.outputFormatting, keySortingStrategy: self.keySortingStrategy)
         let bytes = writer.writeValue(value)
 
         return Data(bytes)
@@ -1014,9 +1039,11 @@ extension JSONValue {
 
     fileprivate struct Writer {
         let options: JSONSafeEncoder.OutputFormatting
+        let keySortingStrategy: JSONSafeEncoder.KeySortingStrategy
 
-        init(options: JSONSafeEncoder.OutputFormatting) {
+        init(options: JSONSafeEncoder.OutputFormatting, keySortingStrategy: JSONSafeEncoder.KeySortingStrategy) {
             self.options = options
+            self.keySortingStrategy = keySortingStrategy
         }
 
         func writeValue(_ value: JSONValue) -> [UInt8] {
@@ -1056,7 +1083,7 @@ extension JSONValue {
                 bytes.append(._closebracket)
             case .object(let dict):
                 if #available(macOS 10.13, *), options.contains(.sortedKeys) {
-                    let sorted = dict.sorted { $0.key < $1.key }
+                    let sorted = dict.sorted(by: keySortingStrategy.sortFunction)
                     self.writeObject(sorted, into: &bytes)
                 } else {
                     self.writeObject(dict, into: &bytes)
@@ -1118,7 +1145,7 @@ extension JSONValue {
                 bytes.append(._closebracket)
             case .object(let dict):
                 if #available(macOS 10.13, *), options.contains(.sortedKeys) {
-                    let sorted = dict.sorted { $0.key < $1.key }
+                    let sorted = dict.sorted(by: keySortingStrategy.sortFunction)
                     self.writePrettyObject(sorted, into: &bytes, depth: depth)
                 } else {
                     self.writePrettyObject(dict, into: &bytes, depth: depth)
